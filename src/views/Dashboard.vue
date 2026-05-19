@@ -20,6 +20,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import mapData from '../../public/100000_full.json'
+import chinaMapImg from '../assets/mapimg/chinawx1.png'
 
 const screen = ref(null)
 const tooltip = ref({ show: false, name: '', x: 0, y: 0 })
@@ -37,31 +38,36 @@ let mouse
 let pickableMeshes = []
 let hoveredProvince = null
 let selectedProvince = null
+let chinaMapTexture = null
+
+const SIDE_COLOR = '#93cfe9'
+/** 顶面贴图亮度系数（BasicMaterial color 与贴图相乘） */
+const MAP_TOP_TINT = 0xb5b5b5
 
 const PROVINCE_STYLES = {
   normal: {
-    colors: ['#0a1a32', '#040c18'],
-    emissive: ['#0c2860', '#020608'],
-    emissiveIntensity: [0.22, 0.06],
-    opacity: [0.96, 0.98],
-    metalness: [0.72, 0.85],
-    roughness: [0.35, 0.45],
+    colors: ['#ffffff', SIDE_COLOR],
+    emissive: ['#000000', '#4a8aaa'],
+    emissiveIntensity: [0, 0.08],
+    opacity: [1, 0.98],
+    metalness: [0.05, 0.15],
+    roughness: [0.92, 0.55],
   },
   hover: {
-    colors: ['#123868', '#081828'],
-    emissive: ['#1888cc', '#061838'],
-    emissiveIntensity: [0.55, 0.2],
-    opacity: [0.97, 0.98],
-    metalness: [0.75, 0.88],
-    roughness: [0.28, 0.38],
+    colors: ['#ffffff', '#a8daf0'],
+    emissive: ['#000000', '#5a9aba'],
+    emissiveIntensity: [0, 0.15],
+    opacity: [1, 0.99],
+    metalness: [0.05, 0.18],
+    roughness: [0.88, 0.48],
   },
   selected: {
-    colors: ['#1a5090', '#0c2848'],
-    emissive: ['#33aaff', '#0a3060'],
-    emissiveIntensity: [0.85, 0.35],
-    opacity: [0.98, 0.99],
-    metalness: [0.78, 0.9],
-    roughness: [0.22, 0.32],
+    colors: ['#ffffff', '#b8e8f8'],
+    emissive: ['#000000', '#6aaacc'],
+    emissiveIntensity: [0, 0.22],
+    opacity: [1, 1],
+    metalness: [0.05, 0.2],
+    roughness: [0.85, 0.42],
   },
 }
 const HOVER_LIFT = 3
@@ -117,43 +123,94 @@ function createRadialGlowTexture() {
   return new THREE.CanvasTexture(canvas)
 }
 
-function createGridTexture() {
-  const size = 256
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  ctx.fillStyle = '#081828'
-  ctx.fillRect(0, 0, size, size)
-  ctx.strokeStyle = 'rgba(0, 140, 220, 0.12)'
-  ctx.lineWidth = 1
-  for (let i = 0; i <= size; i += 32) {
-    ctx.beginPath()
-    ctx.moveTo(i, 0)
-    ctx.lineTo(i, size)
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.moveTo(0, i)
-    ctx.lineTo(size, i)
-    ctx.stroke()
+function getChinaMapTexture() {
+  if (!chinaMapTexture) {
+    chinaMapTexture = new THREE.TextureLoader().load(chinaMapImg)
+    chinaMapTexture.colorSpace = THREE.SRGBColorSpace
+    chinaMapTexture.minFilter = THREE.LinearFilter
+    chinaMapTexture.magFilter = THREE.LinearFilter
   }
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-  tex.repeat.set(6, 6)
-  return tex
+  return chinaMapTexture
+}
+
+/** chinawx1.png 对应的地理范围（与腾讯地图导出对齐，可按需微调） */
+const TEXTURE_GEO_BOUNDS = {
+  minLng: 69,
+  maxLng: 140,
+  minLat: 3,
+  maxLat: 54.5,
+}
+
+/** 采样内缩，避开 PNG 四周暗边/黑边 */
+const UV_SAMPLE_INSET = {
+  left: 0.06,
+  right: 0.04,
+  top: 0.05,
+  bottom: 0.1,
+}
+
+function createUvProjection() {
+  const b = TEXTURE_GEO_BOUNDS
+  const feature = {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [b.minLng, b.minLat],
+          [b.maxLng, b.minLat],
+          [b.maxLng, b.maxLat],
+          [b.minLng, b.maxLat],
+          [b.minLng, b.minLat],
+        ],
+      ],
+    },
+  }
+  return d3.geoMercator().fitExtent([[0, 0], [1, 1]], feature)
+}
+
+/** 按经纬度映射贴图 UV（与显示投影解耦） */
+function applyMapUvs(geometry, uvProjection) {
+  const uMin = UV_SAMPLE_INSET.left
+  const uMax = 1 - UV_SAMPLE_INSET.right
+  const vMin = UV_SAMPLE_INSET.bottom
+  const vMax = 1 - UV_SAMPLE_INSET.top
+  const pos = geometry.attributes.position
+  const uv = new Float32Array(pos.count * 2)
+
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const lngLat = projection.invert([x, -y])
+    if (
+      !lngLat ||
+      !Number.isFinite(lngLat[0]) ||
+      !Number.isFinite(lngLat[1])
+    ) {
+      uv[i * 2] = 0.5
+      uv[i * 2 + 1] = 0.5
+      continue
+    }
+
+    const mapped = uvProjection(lngLat)
+    if (!mapped) {
+      uv[i * 2] = 0.5
+      uv[i * 2 + 1] = 0.5
+      continue
+    }
+
+    uv[i * 2] = uMin + mapped[0] * (uMax - uMin)
+    uv[i * 2 + 1] = vMin + (1 - mapped[1]) * (vMax - vMin)
+  }
+
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
 }
 
 function createProvinceMaterials() {
-  const gridMap = createGridTexture()
-  const top = new THREE.MeshStandardMaterial({
-    color: PROVINCE_STYLES.normal.colors[0],
-    emissive: PROVINCE_STYLES.normal.emissive[0],
-    emissiveIntensity: PROVINCE_STYLES.normal.emissiveIntensity[0],
-    map: gridMap,
-    transparent: true,
-    opacity: PROVINCE_STYLES.normal.opacity[0],
-    metalness: PROVINCE_STYLES.normal.metalness[0],
-    roughness: PROVINCE_STYLES.normal.roughness[0],
+  // 顶面用 BasicMaterial，不受暗场景灯光影响，贴图亮度正常
+  const top = new THREE.MeshBasicMaterial({
+    map: getChinaMapTexture(),
+    color: MAP_TOP_TINT,
   })
   const side = new THREE.MeshStandardMaterial({
     color: PROVINCE_STYLES.normal.colors[1],
@@ -287,7 +344,7 @@ const initScene = () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(width, height)
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.22
+  renderer.toneMappingExposure = 1.18
   renderer.outputColorSpace = THREE.SRGBColorSpace
   screen.value.appendChild(renderer.domElement)
 
@@ -561,6 +618,10 @@ function setProvinceVisual(province, state) {
       ? child.material
       : [child.material]
     materials.forEach((mat, index) => {
+      if (index === 0) {
+        mat.color.set(MAP_TOP_TINT)
+        return
+      }
       mat.color.set(style.colors[index] ?? style.colors[0])
       mat.emissive?.set(style.emissive[index] ?? style.emissive[0])
       if (mat.emissiveIntensity !== undefined) {
@@ -716,6 +777,7 @@ function disposePickEvents() {
 const initMap = () => {
   map = new THREE.Object3D()
   const provinceCoords = []
+  const uvProjection = createUvProjection()
 
   mapData.features
     .filter((feature) => !EXCLUDED_ADCODES.has(feature.properties?.adcode))
@@ -739,6 +801,7 @@ const initMap = () => {
             depth: MAP_DEPTH,
             bevelEnabled: false,
           })
+          applyMapUvs(geometry, uvProjection)
           const mesh = new THREE.Mesh(geometry, createProvinceMaterials())
           mesh.userData.isPickable = true
           province.add(mesh)
