@@ -40,21 +40,36 @@ let hoveredProvince = null
 let selectedProvince = null
 let chinaMapTexture = null
 
+/** 省份侧面颜色 */
 const SIDE_COLOR = '#93cfe9'
-/** 顶面贴图亮度系数（BasicMaterial color 与贴图相乘） */
+/** 顶面贴图亮度系数（MeshBasicMaterial.color 与卫星贴图相乘，越大越亮） */
 const MAP_TOP_TINT = 0xb5b5b5
 
+/**
+ * 省份材质样式（normal / hover / selected）
+ * ExtrudeGeometry 使用双材质：[0] 顶底面，[1] 侧面
+ * 数组项均为 [顶面, 侧面]
+ *
+ * - colors:            基色，与贴图/光照相乘
+ * - emissive:          自发光颜色（不依赖灯光）
+ * - emissiveIntensity: 自发光强度，0~1+
+ * - opacity:           透明度，1 为完全不透明
+ * - metalness:         金属度，0 哑光 ~ 1 金属
+ * - roughness:         粗糙度，0 光滑 ~ 1 粗糙
+ *
+ * 注：顶面实际为 MeshBasicMaterial + 卫星贴图，交互时仅调整 MAP_TOP_TINT
+ */
 const PROVINCE_STYLES = {
   normal: {
-    colors: ['#ffffff', SIDE_COLOR],
-    emissive: ['#000000', '#4a8aaa'],
+    colors: ['#ffffff', SIDE_COLOR],           // 顶面白（贴图乘色），侧面 #93cfe9
+    emissive: ['#000000', '#4a8aaa'],           // 顶面不自发光，侧面微蓝自发光
     emissiveIntensity: [0, 0.08],
     opacity: [1, 0.98],
     metalness: [0.05, 0.15],
     roughness: [0.92, 0.55],
   },
   hover: {
-    colors: ['#ffffff', '#a8daf0'],
+    colors: ['#ffffff', '#a8daf0'],            // 侧面略提亮
     emissive: ['#000000', '#5a9aba'],
     emissiveIntensity: [0, 0.15],
     opacity: [1, 0.99],
@@ -62,7 +77,7 @@ const PROVINCE_STYLES = {
     roughness: [0.88, 0.48],
   },
   selected: {
-    colors: ['#ffffff', '#b8e8f8'],
+    colors: ['#ffffff', '#b8e8f8'],            // 选中时侧面最亮
     emissive: ['#000000', '#6aaacc'],
     emissiveIntensity: [0, 0.22],
     opacity: [1, 1],
@@ -70,8 +85,11 @@ const PROVINCE_STYLES = {
     roughness: [0.85, 0.42],
   },
 }
+/** 鼠标悬停时省份沿 Z 轴抬升高度 */
 const HOVER_LIFT = 3
+/** 选中时省份沿 Z 轴抬升高度 */
 const SELECTED_LIFT = 4
+/** 抬升/落下的插值系数，越大动画越快 */
 const LIFT_LERP = 0.18
 
 /** 不渲染的附图要素（如南海诸岛示意） */
@@ -133,15 +151,15 @@ function getChinaMapTexture() {
   return chinaMapTexture
 }
 
-/** chinawx1.png 对应的地理范围（与腾讯地图导出对齐，可按需微调） */
+/** chinawx1.png 覆盖的经纬度范围（贴图与 GeoJSON 对齐时可微调） */
 const TEXTURE_GEO_BOUNDS = {
-  minLng: 69,
-  maxLng: 140,
-  minLat: 3,
-  maxLat: 54.5,
+  minLng: 69,   // 西边界经度
+  maxLng: 140,  // 东边界经度
+  minLat: 3,    // 南边界纬度
+  maxLat: 54.5, // 北边界纬度
 }
 
-/** 采样内缩，避开 PNG 四周暗边/黑边 */
+/** UV 采样内缩比例，避开 PNG 四周暗边/黑边（0~1） */
 const UV_SAMPLE_INSET = {
   left: 0.06,
   right: 0.04,
@@ -207,11 +225,12 @@ function applyMapUvs(geometry, uvProjection) {
 }
 
 function createProvinceMaterials() {
-  // 顶面用 BasicMaterial，不受暗场景灯光影响，贴图亮度正常
+  // [0] 顶面：BasicMaterial 直接显示贴图，不受场景灯光压暗
   const top = new THREE.MeshBasicMaterial({
     map: getChinaMapTexture(),
     color: MAP_TOP_TINT,
   })
+  // [1] 侧面：StandardMaterial，响应灯光与 PBR 参数
   const side = new THREE.MeshStandardMaterial({
     color: PROVINCE_STYLES.normal.colors[1],
     emissive: PROVINCE_STYLES.normal.emissive[1],
@@ -407,16 +426,20 @@ function getPolygonGroups(geometry) {
   return []
 }
 
+/** 地图挤出厚度（Z 轴方向） */
 const MAP_DEPTH = 10
 /** 绕 X 轴倾斜地图（负值：南侧略抬起，更易看到立体） */
 const MAP_TILT_X = THREE.MathUtils.degToRad(-22)
-const BAR_RADIUS = 0.14
+/** 人口柱截面边长（XY 平面） */
+const BAR_SIZE = 0.72
 /** 柱体底面略高于省顶面，避免 Z-fighting */
 const BAR_BASE_OFFSET = 0.35
 const POP_MIN = 300 // 万人
 const POP_MAX = 12500
+/** 人口柱最低/最高高度（Z 轴） */
 const BAR_HEIGHT_MIN = 5
 const BAR_HEIGHT_MAX = 16
+/** 人口柱样式：opacity 柱身透明度，capColor/capOpacity 顶部盖帽 */
 const BAR_STYLES = {
   normal: { opacity: 0.82, capColor: 0xffcc55, capOpacity: 0.95 },
   hover: { opacity: 0.95, capColor: 0xffee88, capOpacity: 1 },
@@ -449,27 +472,19 @@ function createPopulationBar(population, lngLat) {
   group.userData.isPopulationBar = true
   group.renderOrder = 10
 
-  // 细光柱：参考图金色发光针状柱
-  const geometry = new THREE.CylinderGeometry(
-    BAR_RADIUS * 0.25,
-    BAR_RADIUS,
-    height,
-    8,
-    1,
-    false,
-  )
+  // 方柱体：更接近数据可视化柱状图
+  const geometry = new THREE.BoxGeometry(BAR_SIZE, BAR_SIZE, height)
   const colorBottom = new THREE.Color(0xff5500)
   const colorTop = new THREE.Color(0xffeeaa)
   const positions = geometry.attributes.position
   const colors = []
   for (let i = 0; i < positions.count; i++) {
-    const y = positions.getY(i)
-    const t = (y + height / 2) / height
+    const z = positions.getZ(i)
+    const t = (z + height / 2) / height
     const c = colorBottom.clone().lerp(colorTop, t)
     colors.push(c.r, c.g, c.b)
   }
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-  geometry.rotateX(Math.PI / 2)
 
   const material = new THREE.MeshBasicMaterial({
     vertexColors: true,
@@ -484,9 +499,9 @@ function createPopulationBar(population, lngLat) {
   bar.userData.isBarBody = true
   group.add(bar)
 
-  // 顶部光点
+  // 顶部盖帽
   const cap = new THREE.Mesh(
-    new THREE.SphereGeometry(BAR_RADIUS * 1.6, 8, 8),
+    new THREE.BoxGeometry(BAR_SIZE * 1.1, BAR_SIZE * 1.1, 0.22),
     new THREE.MeshBasicMaterial({
       color: BAR_STYLES.normal.capColor,
       transparent: true,
@@ -502,7 +517,7 @@ function createPopulationBar(population, lngLat) {
 
   // 底部光晕环
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(BAR_RADIUS * 0.8, BAR_RADIUS * 2.2, 16),
+    new THREE.RingGeometry(BAR_SIZE * 0.35, BAR_SIZE * 0.95, 16),
     new THREE.MeshBasicMaterial({
       color: 0xff8833,
       transparent: true,
@@ -592,7 +607,7 @@ function createProvinceLabel(name, lngLat) {
 
   const el = document.createElement('div')
   el.className = 'province-label'
-  el.innerHTML = `<span class="label-dot"></span>${name}`
+  el.textContent = name
 
   const label = new CSS2DObject(el)
   label.position.set(projected[0], -projected[1], MAP_DEPTH + 1)
@@ -830,7 +845,8 @@ const initMap = () => {
     })
   map.rotation.x = MAP_TILT_X
 
-  initFlyLines(provinceCoords)
+  // 飞线
+  // initFlyLines(provinceCoords)
 
   const glowPlane = new THREE.Mesh(
     new THREE.CircleGeometry(95, 64),
@@ -873,9 +889,6 @@ const projection = d3.geoMercator()
 }
 
 .screen :deep(.province-label) {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
@@ -887,15 +900,6 @@ const projection = d3.geoMercator()
     0 0 2px rgba(0, 0, 0, 0.9);
   transform: translate(-50%, -50%);
   user-select: none;
-}
-
-.screen :deep(.label-dot) {
-  flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  background: #ffaa44;
-  border-radius: 50%;
-  box-shadow: 0 0 8px rgba(255, 170, 60, 0.9);
 }
 
 .map-tooltip {
