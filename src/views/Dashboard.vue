@@ -246,6 +246,8 @@ const MAP_DEPTH = 10
 /** 绕 X 轴倾斜地图（负值：南侧略抬起，更易看到立体） */
 const MAP_TILT_X = THREE.MathUtils.degToRad(-22)
 const BAR_SIZE = 0.9
+/** 柱体底面略高于省顶面，避免透明材质 Z-fighting 导致大量柱子不可见 */
+const BAR_BASE_OFFSET = 0.35
 const POP_MIN = 300 // 万人
 const POP_MAX = 12500
 const BAR_HEIGHT_MIN = 4
@@ -254,23 +256,23 @@ const BAR_STYLES = {
   normal: {
     color: 0x3399ff,
     emissive: 0x1188ff,
-    emissiveIntensity: 0.28,
-    opacity: 0.38,
-    transmission: 0.92,
+    emissiveIntensity: 0.38,
+    opacity: 0.62,
+    transmission: 0.72,
   },
   hover: {
     color: 0x66ccff,
     emissive: 0x33bbff,
-    emissiveIntensity: 0.48,
-    opacity: 0.48,
-    transmission: 0.86,
+    emissiveIntensity: 0.58,
+    opacity: 0.72,
+    transmission: 0.65,
   },
   selected: {
     color: 0x99eeff,
     emissive: 0x55ddff,
-    emissiveIntensity: 0.68,
-    opacity: 0.55,
-    transmission: 0.78,
+    emissiveIntensity: 0.78,
+    opacity: 0.82,
+    transmission: 0.55,
   },
 }
 
@@ -295,8 +297,10 @@ function createPopulationBar(population, lngLat) {
   if (!projected) return null
 
   const height = populationToBarHeight(population)
+  const baseZ = MAP_DEPTH + BAR_BASE_OFFSET
   const group = new THREE.Group()
   group.userData.isPopulationBar = true
+  group.renderOrder = 10
 
   const geometry = new THREE.BoxGeometry(BAR_SIZE, BAR_SIZE, height)
   const colorBottom = new THREE.Color(0x0066cc)
@@ -325,10 +329,11 @@ function createPopulationBar(population, lngLat) {
     emissive: BAR_STYLES.normal.emissive,
     emissiveIntensity: BAR_STYLES.normal.emissiveIntensity,
     side: THREE.DoubleSide,
-    depthWrite: false,
+    depthWrite: true,
   })
   const bar = new THREE.Mesh(geometry, material)
-  bar.position.set(projected[0], -projected[1], MAP_DEPTH + height / 2)
+  bar.position.set(projected[0], -projected[1], baseZ + height / 2)
+  bar.renderOrder = 10
   bar.userData.isPopulationBar = true
   bar.userData.isBarBody = true
   group.add(bar)
@@ -338,20 +343,21 @@ function createPopulationBar(population, lngLat) {
     new THREE.MeshPhysicalMaterial({
       color: 0xbbeeff,
       emissive: 0x44ccff,
-      emissiveIntensity: 0.55,
+      emissiveIntensity: 0.65,
       transparent: true,
-      opacity: 0.55,
-      transmission: 0.85,
+      opacity: 0.72,
+      transmission: 0.68,
       thickness: 0.3,
       ior: 1.5,
       metalness: 0,
       roughness: 0.04,
       clearcoat: 1,
       clearcoatRoughness: 0.02,
-      depthWrite: false,
+      depthWrite: true,
     }),
   )
-  cap.position.set(projected[0], -projected[1], MAP_DEPTH + height + 0.1)
+  cap.position.set(projected[0], -projected[1], baseZ + height + 0.1)
+  cap.renderOrder = 11
   cap.userData.isPopulationBar = true
   cap.userData.isBarCap = true
   group.add(cap)
