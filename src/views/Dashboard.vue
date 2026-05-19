@@ -40,28 +40,28 @@ let selectedProvince = null
 
 const PROVINCE_STYLES = {
   normal: {
-    colors: ['#18d4ff', '#064878'],
-    emissive: ['#0aa8e8', '#021830'],
-    emissiveIntensity: [0.38, 0.16],
-    opacity: [0.92, 0.94],
-    metalness: [0.55, 0.78],
-    roughness: [0.18, 0.32],
+    colors: ['#0a1a32', '#040c18'],
+    emissive: ['#0c2860', '#020608'],
+    emissiveIntensity: [0.22, 0.06],
+    opacity: [0.96, 0.98],
+    metalness: [0.72, 0.85],
+    roughness: [0.35, 0.45],
   },
   hover: {
-    colors: ['#66eeff', '#0a68b8'],
-    emissive: ['#44eeff', '#0848a0'],
-    emissiveIntensity: [0.68, 0.34],
-    opacity: [0.96, 0.97],
-    metalness: [0.58, 0.82],
-    roughness: [0.12, 0.26],
+    colors: ['#123868', '#081828'],
+    emissive: ['#1888cc', '#061838'],
+    emissiveIntensity: [0.55, 0.2],
+    opacity: [0.97, 0.98],
+    metalness: [0.75, 0.88],
+    roughness: [0.28, 0.38],
   },
   selected: {
-    colors: ['#aaf6ff', '#1890d8'],
-    emissive: ['#66eeff', '#1068c0'],
-    emissiveIntensity: [0.88, 0.48],
-    opacity: [0.98, 0.98],
-    metalness: [0.62, 0.85],
-    roughness: [0.08, 0.2],
+    colors: ['#1a5090', '#0c2848'],
+    emissive: ['#33aaff', '#0a3060'],
+    emissiveIntensity: [0.85, 0.35],
+    opacity: [0.98, 0.99],
+    metalness: [0.78, 0.9],
+    roughness: [0.22, 0.32],
   },
 }
 const HOVER_LIFT = 3
@@ -109,19 +109,47 @@ function createRadialGlowTexture() {
     size / 2,
     size / 2,
   )
-  gradient.addColorStop(0, 'rgba(50, 190, 255, 0.38)')
-  gradient.addColorStop(0.4, 'rgba(20, 90, 200, 0.12)')
+  gradient.addColorStop(0, 'rgba(20, 100, 220, 0.28)')
+  gradient.addColorStop(0.45, 'rgba(8, 40, 100, 0.08)')
   gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, size, size)
   return new THREE.CanvasTexture(canvas)
 }
 
+function createGridTexture() {
+  const size = 256
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#081828'
+  ctx.fillRect(0, 0, size, size)
+  ctx.strokeStyle = 'rgba(0, 140, 220, 0.12)'
+  ctx.lineWidth = 1
+  for (let i = 0; i <= size; i += 32) {
+    ctx.beginPath()
+    ctx.moveTo(i, 0)
+    ctx.lineTo(i, size)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(0, i)
+    ctx.lineTo(size, i)
+    ctx.stroke()
+  }
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(6, 6)
+  return tex
+}
+
 function createProvinceMaterials() {
+  const gridMap = createGridTexture()
   const top = new THREE.MeshStandardMaterial({
     color: PROVINCE_STYLES.normal.colors[0],
     emissive: PROVINCE_STYLES.normal.emissive[0],
     emissiveIntensity: PROVINCE_STYLES.normal.emissiveIntensity[0],
+    map: gridMap,
     transparent: true,
     opacity: PROVINCE_STYLES.normal.opacity[0],
     metalness: PROVINCE_STYLES.normal.metalness[0],
@@ -137,6 +165,92 @@ function createProvinceMaterials() {
     roughness: PROVINCE_STYLES.normal.roughness[1],
   })
   return [top, side]
+}
+
+function initStarfield() {
+  const count = 500
+  const positions = new Float32Array(count * 3)
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 360
+    positions[i * 3 + 1] = (Math.random() - 0.5) * 360
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 180 - 40
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  scene.add(
+    new THREE.Points(
+      geometry,
+      new THREE.PointsMaterial({
+        color: 0x5599cc,
+        size: 0.55,
+        transparent: true,
+        opacity: 0.5,
+        sizeAttenuation: true,
+        depthWrite: false,
+      }),
+    ),
+  )
+}
+
+function lngLatToVec3(lngLat, z = MAP_DEPTH + 1) {
+  const p = projectLngLat(lngLat)
+  if (!p) return null
+  return new THREE.Vector3(p[0], -p[1], z)
+}
+
+function createFlyLine(from, to, arcHeight = 20) {
+  const start = lngLatToVec3(from)
+  const end = lngLatToVec3(to)
+  if (!start || !end) return null
+
+  const mid = new THREE.Vector3(
+    (start.x + end.x) / 2,
+    (start.y + end.y) / 2,
+    MAP_DEPTH + arcHeight,
+  )
+  const curve = new THREE.QuadraticBezierCurve3(start, mid, end)
+  const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(48))
+  return new THREE.Line(
+    geometry,
+    new THREE.LineBasicMaterial({
+      color: 0xff7722,
+      transparent: true,
+      opacity: 0.42,
+    }),
+  )
+}
+
+function initFlyLines(provinceCoords) {
+  const flyGroup = new THREE.Group()
+  const hub =
+    provinceCoords.find((p) => p.name === '北京市')?.coord ??
+    [116.405285, 39.904989]
+  const targets = provinceCoords
+    .filter((p) => p.name !== '北京市')
+    .sort((a, b) => b.population - a.population)
+    .slice(0, 12)
+
+  targets.forEach((target, i) => {
+    const line = createFlyLine(hub, target.coord, 16 + i * 1.2)
+    if (line) {
+      line.renderOrder = 5
+      flyGroup.add(line)
+    }
+  })
+
+  for (let i = 0; i < 4; i++) {
+    const a = targets[i * 2]?.coord
+    const b = targets[i * 2 + 1]?.coord
+    if (a && b) {
+      const line = createFlyLine(a, b, 12)
+      if (line) {
+        line.renderOrder = 5
+        flyGroup.add(line)
+      }
+    }
+  }
+
+  map.add(flyGroup)
 }
 
 onMounted(() => {
@@ -161,8 +275,8 @@ const initScene = () => {
   const { width, height } = getSize()
   // 场景
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x010818)
-  scene.fog = new THREE.FogExp2(0x010818, 0.0055)
+  scene.background = new THREE.Color(0x000208)
+  scene.fog = new THREE.FogExp2(0x000208, 0.0048)
 
   // 相机
   camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000)
@@ -173,7 +287,7 @@ const initScene = () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(width, height)
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.12
+  renderer.toneMappingExposure = 1.22
   renderer.outputColorSpace = THREE.SRGBColorSpace
   screen.value.appendChild(renderer.domElement)
 
@@ -181,9 +295,9 @@ const initScene = () => {
   composer.addPass(new RenderPass(scene, camera))
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(width, height),
-    0.42,
-    0.4,
-    0.78,
+    0.58,
+    0.48,
+    0.62,
   )
   composer.addPass(bloomPass)
 
@@ -199,26 +313,20 @@ const initScene = () => {
   controls.target.set(0, 0, 0)
   controls.update()
 
-  // 灯光
-  scene.add(new THREE.AmbientLight(0x0a2048, 0.6))
-  const hemi = new THREE.HemisphereLight(0x88ddff, 0x040818, 0.75)
+  // 灯光 — 暗色底图 + 霓虹高光
+  scene.add(new THREE.AmbientLight(0x061020, 0.45))
+  const hemi = new THREE.HemisphereLight(0x2266aa, 0x020408, 0.55)
   scene.add(hemi)
 
-  const keyLight = new THREE.DirectionalLight(0xc8f0ff, 1.5)
+  const keyLight = new THREE.DirectionalLight(0x88bbee, 0.85)
   keyLight.position.set(28, -18, 48)
   scene.add(keyLight)
 
-  const fillLight = new THREE.DirectionalLight(0x2288ff, 0.55)
-  fillLight.position.set(-35, 25, 20)
-  scene.add(fillLight)
-
-  const rimLight = new THREE.DirectionalLight(0x66eeff, 0.75)
+  const rimLight = new THREE.DirectionalLight(0x22aaff, 0.35)
   rimLight.position.set(-10, -40, 35)
   scene.add(rimLight)
 
-  const topGlow = new THREE.PointLight(0x44eeff, 1.2, 200)
-  topGlow.position.set(0, 0, 55)
-  scene.add(topGlow)
+  initStarfield()
 
   // 动画
   const animate = () => {
@@ -245,35 +353,17 @@ function getPolygonGroups(geometry) {
 const MAP_DEPTH = 10
 /** 绕 X 轴倾斜地图（负值：南侧略抬起，更易看到立体） */
 const MAP_TILT_X = THREE.MathUtils.degToRad(-22)
-const BAR_SIZE = 0.9
-/** 柱体底面略高于省顶面，避免透明材质 Z-fighting 导致大量柱子不可见 */
+const BAR_RADIUS = 0.14
+/** 柱体底面略高于省顶面，避免 Z-fighting */
 const BAR_BASE_OFFSET = 0.35
 const POP_MIN = 300 // 万人
 const POP_MAX = 12500
-const BAR_HEIGHT_MIN = 4
-const BAR_HEIGHT_MAX = 13
+const BAR_HEIGHT_MIN = 5
+const BAR_HEIGHT_MAX = 16
 const BAR_STYLES = {
-  normal: {
-    color: 0x3399ff,
-    emissive: 0x1188ff,
-    emissiveIntensity: 0.38,
-    opacity: 0.62,
-    transmission: 0.72,
-  },
-  hover: {
-    color: 0x66ccff,
-    emissive: 0x33bbff,
-    emissiveIntensity: 0.58,
-    opacity: 0.72,
-    transmission: 0.65,
-  },
-  selected: {
-    color: 0x99eeff,
-    emissive: 0x55ddff,
-    emissiveIntensity: 0.78,
-    opacity: 0.82,
-    transmission: 0.55,
-  },
+  normal: { opacity: 0.82, capColor: 0xffcc55, capOpacity: 0.95 },
+  hover: { opacity: 0.95, capColor: 0xffee88, capOpacity: 1 },
+  selected: { opacity: 1, capColor: 0xffffff, capOpacity: 1 },
 }
 
 /** 按 adcode 生成稳定的随机人口（万人） */
@@ -302,33 +392,32 @@ function createPopulationBar(population, lngLat) {
   group.userData.isPopulationBar = true
   group.renderOrder = 10
 
-  const geometry = new THREE.BoxGeometry(BAR_SIZE, BAR_SIZE, height)
-  const colorBottom = new THREE.Color(0x0066cc)
-  const colorTop = new THREE.Color(0x88eeff)
+  // 细光柱：参考图金色发光针状柱
+  const geometry = new THREE.CylinderGeometry(
+    BAR_RADIUS * 0.25,
+    BAR_RADIUS,
+    height,
+    8,
+    1,
+    false,
+  )
+  const colorBottom = new THREE.Color(0xff5500)
+  const colorTop = new THREE.Color(0xffeeaa)
   const positions = geometry.attributes.position
   const colors = []
   for (let i = 0; i < positions.count; i++) {
-    const z = positions.getZ(i)
-    const t = (z + height / 2) / height
+    const y = positions.getY(i)
+    const t = (y + height / 2) / height
     const c = colorBottom.clone().lerp(colorTop, t)
     colors.push(c.r, c.g, c.b)
   }
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.rotateX(Math.PI / 2)
 
-  const material = new THREE.MeshPhysicalMaterial({
+  const material = new THREE.MeshBasicMaterial({
     vertexColors: true,
     transparent: true,
     opacity: BAR_STYLES.normal.opacity,
-    transmission: BAR_STYLES.normal.transmission,
-    thickness: height * 0.6,
-    ior: 1.45,
-    metalness: 0,
-    roughness: 0.06,
-    clearcoat: 1,
-    clearcoatRoughness: 0.04,
-    emissive: BAR_STYLES.normal.emissive,
-    emissiveIntensity: BAR_STYLES.normal.emissiveIntensity,
-    side: THREE.DoubleSide,
     depthWrite: true,
   })
   const bar = new THREE.Mesh(geometry, material)
@@ -338,29 +427,38 @@ function createPopulationBar(population, lngLat) {
   bar.userData.isBarBody = true
   group.add(bar)
 
+  // 顶部光点
   const cap = new THREE.Mesh(
-    new THREE.BoxGeometry(BAR_SIZE * 1.12, BAR_SIZE * 1.12, 0.2),
-    new THREE.MeshPhysicalMaterial({
-      color: 0xbbeeff,
-      emissive: 0x44ccff,
-      emissiveIntensity: 0.65,
+    new THREE.SphereGeometry(BAR_RADIUS * 1.6, 8, 8),
+    new THREE.MeshBasicMaterial({
+      color: BAR_STYLES.normal.capColor,
       transparent: true,
-      opacity: 0.72,
-      transmission: 0.68,
-      thickness: 0.3,
-      ior: 1.5,
-      metalness: 0,
-      roughness: 0.04,
-      clearcoat: 1,
-      clearcoatRoughness: 0.02,
-      depthWrite: true,
+      opacity: BAR_STYLES.normal.capOpacity,
+      depthWrite: false,
     }),
   )
-  cap.position.set(projected[0], -projected[1], baseZ + height + 0.1)
+  cap.position.set(projected[0], -projected[1], baseZ + height + 0.15)
   cap.renderOrder = 11
   cap.userData.isPopulationBar = true
   cap.userData.isBarCap = true
   group.add(cap)
+
+  // 底部光晕环
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(BAR_RADIUS * 0.8, BAR_RADIUS * 2.2, 16),
+    new THREE.MeshBasicMaterial({
+      color: 0xff8833,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  )
+  ring.position.set(projected[0], -projected[1], baseZ + 0.02)
+  ring.renderOrder = 9
+  ring.userData.isPopulationBar = true
+  ring.userData.isBarRing = true
+  group.add(ring)
 
   return group
 }
@@ -396,7 +494,7 @@ function ringToShape(ring) {
   return shape
 }
 
-/** 顶面省界描边（双层：外晕 + 亮线） */
+/** 顶面省界 — 三层霓虹描边 */
 function createBorderLine(ring) {
   const points = projectRing(ring)
   if (!points) return null
@@ -412,8 +510,9 @@ function createBorderLine(ring) {
     })
     return new THREE.LineLoop(geometry, material)
   }
-  group.add(makeLine(MAP_DEPTH + 0.03, 0x2288ff, 0.22))
-  group.add(makeLine(MAP_DEPTH + 0.07, 0xb8f4ff, 0.82))
+  group.add(makeLine(MAP_DEPTH + 0.02, 0x0055cc, 0.18))
+  group.add(makeLine(MAP_DEPTH + 0.05, 0x00aaff, 0.55))
+  group.add(makeLine(MAP_DEPTH + 0.08, 0xccffff, 1))
   return group
 }
 
@@ -436,7 +535,7 @@ function createProvinceLabel(name, lngLat) {
 
   const el = document.createElement('div')
   el.className = 'province-label'
-  el.textContent = name
+  el.innerHTML = `<span class="label-dot"></span>${name}`
 
   const label = new CSS2DObject(el)
   label.position.set(projected[0], -projected[1], MAP_DEPTH + 1)
@@ -486,18 +585,13 @@ function setProvinceBarVisual(province, state) {
   province.traverse((child) => {
     if (!child.isMesh || !child.userData.isPopulationBar) return
     const mat = child.material
-    if (mat.emissive) {
-      mat.emissive.set(style.emissive)
-      mat.emissiveIntensity = style.emissiveIntensity
-    }
-    if (style.color && !child.userData.isBarBody) {
-      mat.color.set(style.color)
-    }
-    mat.opacity = child.userData.isBarCap
-      ? style.opacity * 1.15
-      : style.opacity
-    if (mat.transmission !== undefined) {
-      mat.transmission = style.transmission
+    if (child.userData.isBarCap) {
+      mat.color.set(style.capColor)
+      mat.opacity = style.capOpacity
+    } else if (child.userData.isBarBody) {
+      mat.opacity = style.opacity
+    } else if (child.userData.isBarRing) {
+      mat.opacity = style.opacity * 0.45
     }
   })
 }
@@ -621,6 +715,8 @@ function disposePickEvents() {
 
 const initMap = () => {
   map = new THREE.Object3D()
+  const provinceCoords = []
+
   mapData.features
     .filter((feature) => !EXCLUDED_ADCODES.has(feature.properties?.adcode))
     .forEach((feature) => {
@@ -654,6 +750,9 @@ const initMap = () => {
 
       const labelCoord = getLabelCoord(feature)
       const { name } = feature.properties
+      if (labelCoord) {
+        provinceCoords.push({ name, coord: labelCoord, population })
+      }
       if (name && labelCoord) {
         const label = createProvinceLabel(name, labelCoord)
         if (label) province.add(label)
@@ -668,12 +767,14 @@ const initMap = () => {
     })
   map.rotation.x = MAP_TILT_X
 
+  initFlyLines(provinceCoords)
+
   const glowPlane = new THREE.Mesh(
     new THREE.CircleGeometry(95, 64),
     new THREE.MeshBasicMaterial({
       map: createRadialGlowTexture(),
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.55,
       depthWrite: false,
     }),
   )
@@ -699,7 +800,7 @@ const projection = d3.geoMercator()
   position: relative;
   width: 100vw;
   height: 100vh;
-  background: radial-gradient(ellipse at 50% 55%, #0a3068 0%, #010818 52%, #000408 100%);
+  background: radial-gradient(ellipse at 50% 50%, #061428 0%, #000208 60%, #000000 100%);
 }
 
 .screen :deep(.map-label-layer) {
@@ -709,17 +810,29 @@ const projection = d3.geoMercator()
 }
 
 .screen :deep(.province-label) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: #c8f0ff;
+  color: #e8f4ff;
   white-space: nowrap;
   text-shadow:
-    0 0 6px rgba(80, 220, 255, 0.45),
+    0 0 8px rgba(80, 200, 255, 0.55),
     0 0 2px rgba(0, 0, 0, 0.9);
   transform: translate(-50%, -50%);
   user-select: none;
+}
+
+.screen :deep(.label-dot) {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  background: #ffaa44;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(255, 170, 60, 0.9);
 }
 
 .map-tooltip {
