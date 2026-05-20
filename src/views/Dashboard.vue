@@ -387,6 +387,10 @@ const initScene = () => {
   controls.enableDamping = true
   controls.dampingFactor = 0.05
   controls.target.set(0, 0, 0)
+  controls.minPolarAngle = CAMERA_POLAR_MIN
+  controls.maxPolarAngle = CAMERA_POLAR_MAX
+  controls.minAzimuthAngle = CAMERA_AZIMUTH_MIN
+  controls.maxAzimuthAngle = CAMERA_AZIMUTH_MAX
   controls.update()
 
   // 灯光 — 暗色底图 + 霓虹高光
@@ -430,6 +434,11 @@ function getPolygonGroups(geometry) {
 const MAP_DEPTH = 10
 /** 绕 X 轴倾斜地图（负值：南侧略抬起，更易看到立体） */
 const MAP_TILT_X = THREE.MathUtils.degToRad(-22)
+/** 相机极角/方位角限制，避免看到地图底面或绕到背面 */
+const CAMERA_POLAR_MIN = THREE.MathUtils.degToRad(55)
+const CAMERA_POLAR_MAX = THREE.MathUtils.degToRad(95)
+const CAMERA_AZIMUTH_MIN = THREE.MathUtils.degToRad(-40)
+const CAMERA_AZIMUTH_MAX = THREE.MathUtils.degToRad(40)
 /** 人口柱截面边长（XY 平面） */
 const BAR_SIZE = 0.72
 /** 柱体底面略高于省顶面，避免 Z-fighting */
