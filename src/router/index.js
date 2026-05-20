@@ -1,31 +1,20 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../views/Home.vue'
-import About from '../views/About.vue'
-import Article from '../views/Article.vue'
-import Dashboard from '../views/Dashboard.vue'
+import { appPages } from '../config/pages'
 
 const routes = [
   {
     path: '/',
     name: 'Home',
     component: Home,
+    meta: { landing: true },
   },
-  {
-    path: '/about',
-    name: 'About',
-    component: About,
-  },
-  {
-    path: '/article',
-    name: 'Article',
-    component: Article,
-  },
-  {
-    path: '/dashboard',
-    name: 'Dashboard',
-    component: Dashboard,
-    meta: { fullscreen: true },
-  },
+  ...appPages.map(({ path, name, component, meta }) => ({
+    path,
+    name,
+    component,
+    meta: meta ?? {},
+  })),
 ]
 
 const router = createRouter({

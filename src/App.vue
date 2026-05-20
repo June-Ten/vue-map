@@ -4,6 +4,10 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const isFullscreen = computed(() => route.meta?.fullscreen)
+const isLanding = computed(() => route.meta?.landing)
+const showBackHome = computed(
+  () => route.name !== 'Home' && !isFullscreen.value,
+)
 
 watch(
   isFullscreen,
@@ -21,23 +25,53 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-root" :class="{ 'app-root--fullscreen': isFullscreen }">
-    <nav v-if="!isFullscreen">
-      <router-link to="/">Home</router-link>
-      |
-      <router-link to="/about">About</router-link>
-      |
-      <router-link to="/article">Article</router-link>
-      |
-      <router-link to="/dashboard">数据大屏</router-link>
+  <div
+    class="app-root"
+    :class="{
+      'app-root--fullscreen': isFullscreen || isLanding,
+      'app-root--landing': isLanding,
+    }"
+  >
+    <nav v-if="showBackHome" class="app-nav">
+      <router-link to="/" class="app-nav-link">← 返回首页</router-link>
     </nav>
-    <main class="app-main" :class="{ 'app-main--fullscreen': isFullscreen }">
+    <main
+      class="app-main"
+      :class="{
+        'app-main--fullscreen': isFullscreen || isLanding,
+        'app-main--landing': isLanding,
+      }"
+    >
       <router-view />
     </main>
   </div>
 </template>
 
 <style scoped>
+.app-nav {
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-nav-link {
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--accent);
+}
+
+.app-nav-link:hover {
+  text-decoration: underline;
+}
+
+.app-main--landing {
+  padding: 0;
+}
+
+.app-root--landing {
+  text-align: left;
+}
+
 .app-root--fullscreen {
   flex: 1;
   min-height: 0;
