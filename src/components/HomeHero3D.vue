@@ -11,7 +11,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { gsap } from 'gsap'
 
-const MODEL_URL = '/whale.glb'
+const MODEL_URL = `${import.meta.env.BASE_URL}whale.glb`
 const TARGET_SIZE = 4.2
 
 const canvasHost = ref(null)
