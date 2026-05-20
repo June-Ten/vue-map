@@ -61,12 +61,16 @@ html.page-no-scroll body {
 }
 
 #app.app-mount--fullscreen {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: none;
   margin: 0;
   border: none;
   height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
 }
 

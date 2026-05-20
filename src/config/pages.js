@@ -35,4 +35,14 @@ export const appPages = [
     component: () => import('../views/Dashboard.vue'),
     meta: { fullscreen: true },
   },
+  {
+    path: '/equity',
+    name: 'EquityPenetration',
+    title: '股权穿透图',
+    navLabel: '股权穿透',
+    description: 'AntV G6 5 缩进树展示股东与投资关系穿透结构。',
+    tags: ['G6', '树图'],
+    component: () => import('../views/EquityPenetration.vue'),
+    meta: { fullscreen: true },
+  },
 ]
