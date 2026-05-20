@@ -1,0 +1,1 @@
+import{i as e,s as t,v as n}from"./runtime-core.esm-bundler-_NSE4shL.js";import{H as r}from"./index-B0y0Yw9J.js";var i={},a={class:`page`};function o(r,i){return n(),t(`div`,a,[...i[0]||=[e(`h1`,null,`About`,-1),e(`p`,null,`这是一个使用 vue-router 的简单页面。`,-1)]])}var s=r(i,[[`render`,o]]);export{s as default};
