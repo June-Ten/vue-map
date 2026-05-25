@@ -200,8 +200,11 @@ onUnmounted(() => {
   --home-shadow: 0 24px 60px rgba(21, 37, 53, 0.08);
 
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   color: var(--home-text);
   background:
     radial-gradient(ellipse 80% 60% at 15% 20%, rgba(168, 210, 240, 0.45), transparent 60%),
@@ -258,6 +261,7 @@ onUnmounted(() => {
   margin: 0 auto;
   padding: clamp(1.25rem, 2.5vw, 2rem) clamp(1.25rem, 4vw, 3rem)
     clamp(1.5rem, 3vw, 2.25rem);
+  box-sizing: border-box;
 }
 
 .home-top {
